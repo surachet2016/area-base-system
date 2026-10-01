@@ -93,13 +93,15 @@ app.post('/api/attendance/check-in', async (c) => {
     );
   }
 
-  // Factor 2: ตรวจสอบ Geofence พิกัดจริง
-  const { isInside, distanceMeters } = isWithinGeofence(
+  // Factor 2: ตรวจสอบ Geofence พิกัดจริง (รวม GPS Drift Tolerance ในอาคาร)
+  const accuracy = parseFloat(accuracyMeters) || 0;
+  const { isInside, distanceMeters, totalAllowed } = isWithinGeofence(
     parseFloat(userLat),
     parseFloat(userLng),
     workplace.latitude,
     workplace.longitude,
-    workplace.radiusMeters
+    workplace.radiusMeters,
+    accuracy
   );
 
   if (!isInside) {
@@ -107,8 +109,8 @@ app.post('/api/attendance/check-in', async (c) => {
       {
         success: false,
         error: 'OUT_OF_GEOFENCE',
-        message: `ท่านอยู่นอกพื้นที่ที่กำหนด (ห่างจากจุดเช็กอิน ${distanceMeters} เมตร, อนุญาตไม่เกิน ${workplace.radiusMeters} เมตร)`,
-        data: { distanceMeters, allowedRadius: workplace.radiusMeters },
+        message: `ท่านอยู่นอกพื้นที่ที่กำหนด (ห่างจากจุดเช็กอิน ${distanceMeters} เมตร, อนุญาตไม่เกิน ${Math.round(totalAllowed)} เมตร)`,
+        data: { distanceMeters, allowedRadius: workplace.radiusMeters, totalAllowed },
       },
       403
     );

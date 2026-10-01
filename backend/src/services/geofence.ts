@@ -33,11 +33,17 @@ export function isWithinGeofence(
   userLng: number,
   workLat: number,
   workLng: number,
-  radiusMeters: number
-): { isInside: boolean; distanceMeters: number } {
+  radiusMeters: number,
+  accuracyMeters: number = 0
+): { isInside: boolean; distanceMeters: number; totalAllowed: number } {
   const distanceMeters = calculateDistanceMeters(userLat, userLng, workLat, workLng);
+  // อนุโลมค่าความคลาดเคลื่อนสัญญาณ GPS ภายในอาคาร (GPS Drift Tolerance สูงสุด 35 เมตร)
+  const tolerance = Math.min(Math.max(0, accuracyMeters * 0.5), 35);
+  const totalAllowed = radiusMeters + tolerance;
+
   return {
-    isInside: distanceMeters <= radiusMeters,
+    isInside: distanceMeters <= totalAllowed,
     distanceMeters,
+    totalAllowed,
   };
 }

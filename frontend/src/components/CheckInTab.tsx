@@ -10,6 +10,7 @@ import {
   Sparkles,
   Camera,
   X,
+  Radio,
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Workplace, AttendanceRecord } from '../types';
@@ -24,6 +25,7 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
   const [selectedWorkplaceId, setSelectedWorkplaceId] = useState<string>('');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState<boolean>(false);
   const [qrToken, setQrToken] = useState<string>('');
   const [recordType, setRecordType] = useState<'CHECK_IN' | 'CHECK_OUT'>('CHECK_IN');
   const [loading, setLoading] = useState(false);
@@ -39,11 +41,13 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
 
   const activeWorkplace = workplaces.find((w) => w.id === selectedWorkplaceId);
 
-  // ดึงพิกัด GPS จริงจาก Browser / Mobile
+  // ดึงพิกัด GPS จริงจาก Browser / Mobile (บังคับ Refresh ทันที)
   const fetchCurrentLocation = () => {
     setLocationError(null);
+    setIsLocating(true);
     if (!navigator.geolocation) {
       setLocationError('อุปกรณ์หรือเบราว์เซอร์ไม่รองรับ Geolocation API');
+      setIsLocating(false);
       return;
     }
 
@@ -54,17 +58,41 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
           lng: pos.coords.longitude,
           accuracy: Math.round(pos.coords.accuracy),
         });
+        setIsLocating(false);
       },
       (err) => {
         setLocationError(`ไม่สามารถดึงตำแหน่งพิกัดได้: ${err.message}`);
+        setIsLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
   };
 
+  // ติดตามพิกัดดาวเทียมแบบเรียลไทม์ต่อเนื่อง (Continuous GPS Stream)
   useEffect(() => {
     fetchCurrentLocation();
+
+    if (navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setUserCoords({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: Math.round(pos.coords.accuracy),
+          });
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+      );
+
+      return () => navigator.geolocation.clearWatch(watchId);
+    }
   }, []);
+
+  // เมื่อผู้ใช้เปลี่ยนสถานที่ใน dropdown ให้รีเฟรชพิกัดใหม่ทันที
+  useEffect(() => {
+    fetchCurrentLocation();
+  }, [selectedWorkplaceId]);
 
   // ระบบสแกนกล้อง QR ด้วย html5-qrcode
   useEffect(() => {
@@ -81,9 +109,7 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
               qrScanner.stop().then(() => setIsScanning(false)).catch(console.error);
             }
           },
-          () => {
-            // ignore scan failure per frame
-          }
+          () => {}
         )
         .catch((err) => {
           alert('ไม่สามารถเปิดกล้องได้: ' + err);
@@ -109,8 +135,12 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
         )
       : null;
 
+  // รวม GPS drift tolerance ในอาคาร (สูงสุด 35 ม.)
+  const accuracyTolerance = userCoords ? Math.min(Math.max(0, userCoords.accuracy * 0.5), 35) : 0;
+  const totalAllowedRadius = activeWorkplace ? activeWorkplace.radiusMeters + accuracyTolerance : 50;
+
   const isWithinRadius =
-    distance !== null && activeWorkplace ? distance <= activeWorkplace.radiusMeters : false;
+    distance !== null && activeWorkplace ? distance <= totalAllowedRadius : false;
 
   // ฟังก์ชันช่วยดึง Token จากหน้าจอ Kiosk อัตโนมัติ
   const autoFillActiveToken = async () => {
@@ -131,8 +161,8 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
     if (!activeWorkplace) return;
     if (mode === 'inside') {
       setUserCoords({
-        lat: activeWorkplace.latitude + 0.00005, // ห่างประมาณ 5-8 เมตร
-        lng: activeWorkplace.longitude + 0.00005,
+        lat: activeWorkplace.latitude + 0.00003, // ห่างประมาณ 3-5 เมตร
+        lng: activeWorkplace.longitude + 0.00003,
         accuracy: 5,
       });
     } else {
@@ -265,7 +295,7 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
         <select
           value={selectedWorkplaceId}
           onChange={(e) => setSelectedWorkplaceId(e.target.value)}
-          className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+          className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none font-medium"
         >
           {workplaces.map((w) => (
             <option key={w.id} value={w.id}>
@@ -294,23 +324,24 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
           </div>
         </div>
 
-        <h3 className="font-semibold text-slate-800 text-base">
-          {isWithinRadius ? 'คุณอยู่ในพื้นที่ปฏิบัติงานแล้ว' : 'คุณยังอยู่นอกพื้นที่ที่กำหนด'}
+        <h3 className="font-bold text-slate-800 text-base">
+          {isWithinRadius ? 'คุณอยู่ในพื้นที่ปฏิบัติงานแล้ว ✅' : 'คุณยังอยู่นอกพื้นที่ที่กำหนด ⚠️'}
         </h3>
 
-        <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-          <span>ระยะห่างจริง:</span>
+        <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+          <span>ระยะห่าง:</span>
           <span className="font-bold text-slate-900">
             {distance !== null ? `${distance} เมตร` : 'กำลังคำนวณ...'}
           </span>
           <span className="text-slate-400">|</span>
-          <span>รัศมีอนุญาต: {activeWorkplace?.radiusMeters} ม.</span>
+          <span>รัศมีอนุญาต: {Math.round(totalAllowedRadius)} ม.</span>
         </div>
 
         {/* ข้อมูล GPS ผู้ใช้ */}
         {userCoords && (
-          <p className="text-[11px] text-slate-400 mt-2 font-mono">
-            พิกัด: {userCoords.lat.toFixed(5)}, {userCoords.lng.toFixed(5)} (±{userCoords.accuracy} ม.)
+          <p className="text-[11px] text-slate-400 mt-2 font-mono flex items-center justify-center gap-1">
+            <Radio className="w-3 h-3 text-emerald-500 animate-pulse" />
+            พิกัดสด: {userCoords.lat.toFixed(5)}, {userCoords.lng.toFixed(5)} (±{userCoords.accuracy} ม.)
           </p>
         )}
 
@@ -325,9 +356,11 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
           <button
             type="button"
             onClick={fetchCurrentLocation}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-1"
+            disabled={isLocating}
+            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-semibold flex items-center gap-1.5 transition-all shadow-sm"
           >
-            <RefreshCw className="w-3 h-3" /> พิกัด GPS จริง
+            <RefreshCw className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin' : ''}`} />
+            {isLocating ? 'กำลังดึงพิกัดจากดาวเทียม...' : 'รีเฟรชพิกัด GPS สด'}
           </button>
           <button
             type="button"
