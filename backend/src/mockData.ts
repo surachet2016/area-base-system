@@ -58,6 +58,16 @@ export const workplaces: Workplace[] = [
     qrSecret: 'test-secret-key-2026',
     isActive: true,
   },
+  {
+    id: 'a0000000-0000-0000-0000-000000000003',
+    code: 'HOME-SURACHET',
+    name: 'บ้านพักอาจารย์ (จุดทดสอบ WFH)',
+    latitude: 6.44592,
+    longitude: 101.806549,
+    radiusMeters: 80.0,
+    qrSecret: 'home-secret-token-key-2026',
+    isActive: true,
+  },
 ];
 
 export const staffProfiles: StaffProfile[] = [
