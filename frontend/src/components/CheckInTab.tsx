@@ -437,7 +437,13 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
             <div>
               <h4 className="font-bold text-sm">{resultMessage.text}</h4>
               {resultMessage.details && (
-                <div className="text-xs mt-1 text-slate-600 space-y-0.5">
+                <div className="text-xs mt-1.5 text-slate-600 space-y-1">
+                  <p className="font-semibold text-slate-800">
+                    ประเภท:{' '}
+                    <span className="text-blue-600">
+                      {resultMessage.details.recordType === 'CHECK_OUT' ? 'ออกจากงาน (Check-Out)' : 'เข้างาน (Check-In)'}
+                    </span>
+                  </p>
                   <p>สถานที่: {resultMessage.details.workplaceName}</p>
                   <p>
                     เวลา:{' '}
@@ -445,7 +451,14 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
                       resultMessage.details.recordedAt || Date.now()
                     ).toLocaleTimeString('th-TH')}
                   </p>
-                  <p>สถานะ: {resultMessage.details.status === 'LATE' ? 'มาสาย' : 'ตรงเวลา'}</p>
+                  <p>
+                    สถานะ:{' '}
+                    <span className="font-bold">
+                      {resultMessage.details.recordType === 'CHECK_OUT'
+                        ? (resultMessage.details.status === 'EARLY_LEAVE' ? 'ออกก่อนเวลา ⚠️' : resultMessage.details.status === 'OVERTIME' ? 'ล่วงเวลา (OT) ⏱️' : 'เลิกงานตามเวลาปกติ ✅')
+                        : (resultMessage.details.status === 'LATE' ? 'มาสาย ⚠️' : 'ตรงเวลา ✅')}
+                    </span>
+                  </p>
                 </div>
               )}
             </div>

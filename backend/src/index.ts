@@ -116,11 +116,34 @@ app.post('/api/attendance/check-in', async (c) => {
     );
   }
 
-  // คำนวณสถานะเวลา (เช้า 08:45 เกินถือว่าสาย)
+  const isCheckIn = (recordType || 'CHECK_IN') === 'CHECK_IN';
+
+  // คำนวณสถานะเวลา
   const now = new Date();
   const hours = now.getHours();
   const minutes = now.getMinutes();
-  const isLate = hours > 8 || (hours === 8 && minutes > 45);
+
+  let status: 'ON_TIME' | 'LATE' | 'EARLY_LEAVE' | 'OVERTIME' = 'ON_TIME';
+  if (isCheckIn) {
+    status = hours > 8 || (hours === 8 && minutes > 45) ? 'LATE' : 'ON_TIME';
+  } else {
+    // กรณีออกงาน (เช็กว่าออกก่อน 16:30 หรือทำ OT หลัง 17:00 หรือไม่)
+    if (hours < 16 || (hours === 16 && minutes < 30)) {
+      status = 'EARLY_LEAVE';
+    } else if (hours >= 17) {
+      status = 'OVERTIME';
+    } else {
+      status = 'ON_TIME';
+    }
+  }
+
+  const successMessage = isCheckIn
+    ? 'บันทึกเวลาเข้างานเรียบร้อยแล้ว ✅'
+    : 'บันทึกเวลาออกจากงานเรียบร้อยแล้ว ✅ (ขอให้เดินทางกลับโดยสวัสดิภาพ)';
+
+  const remarkText = isCheckIn
+    ? `เข้างานสำเร็จ (${status === 'LATE' ? 'มาสาย' : 'ตรงเวลา'}, ห่างจุดกึ่งกลาง ${distanceMeters} ม.)`
+    : `ออกจากงานสำเร็จ (${status === 'EARLY_LEAVE' ? 'ออกก่อนเวลา' : 'เลิกงานปกติ'}, ห่างจุดกึ่งกลาง ${distanceMeters} ม.)`;
 
   const newRecord: AttendanceRecord = {
     id: `rec-${Date.now()}`,
@@ -135,16 +158,16 @@ app.post('/api/attendance/check-in', async (c) => {
     userLat: parseFloat(userLat),
     userLng: parseFloat(userLng),
     distanceMeters,
-    accuracyMeters: parseFloat(accuracyMeters) || 0,
-    status: isLate ? 'LATE' : 'ON_TIME',
-    remark: `เช็กอินสำเร็จ (ห่างจุดกึ่งกลาง ${distanceMeters} ม.)`,
+    accuracyMeters: accuracy,
+    status,
+    remark: remarkText,
   };
 
   attendanceRecords.unshift(newRecord);
 
   return c.json({
     success: true,
-    message: 'บันทึกเวลาปฏิบัติงานเรียบร้อยแล้ว ✅',
+    message: successMessage,
     data: newRecord,
   });
 });
