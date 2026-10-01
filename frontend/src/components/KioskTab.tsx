@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { RefreshCw, Monitor, Copy, Check, Clock, Building2 } from 'lucide-react';
+import { Monitor, Copy, Check, Clock, Building2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Workplace, QRTokenResponse } from '../types';
 
 interface Props {
@@ -13,6 +13,7 @@ export const KioskTab: React.FC<Props> = ({ workplaces }) => {
   const [countdown, setCountdown] = useState<number>(20);
   const [copied, setCopied] = useState(false);
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [backendOnline, setBackendOnline] = useState<boolean>(true);
 
   useEffect(() => {
     if (workplaces.length > 0 && !selectedWorkplaceId) {
@@ -35,18 +36,38 @@ export const KioskTab: React.FC<Props> = ({ workplaces }) => {
     return () => clearInterval(timer);
   }, []);
 
-  // ดึง Token Dynamic ทุกรอบเวลา
+  // ดึง Token Dynamic ทุกรอบเวลา หรือ Fallback ถ้ายังไม่ได้เปิด Backend
   const fetchToken = async () => {
-    if (!selectedWorkplaceId) return;
+    const wpId = selectedWorkplaceId || (workplaces.length > 0 ? workplaces[0].id : 'a0000000-0000-0000-0000-000000000001');
+    const wpName = workplaces.find((w) => w.id === wpId)?.name || 'อาคารวิทยบริการ มหาวิทยาลัยนราธิวาสราชนครินทร์ (โคกเขือ)';
+
     try {
-      const res = await fetch(`/api/kiosk/token/${selectedWorkplaceId}`);
-      const data = await res.json();
-      if (data.success) {
-        setTokenData(data.data);
-        setCountdown(data.data.expiresIn || 20);
+      const res = await fetch(`/api/kiosk/token/${wpId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setTokenData(data.data);
+          setCountdown(data.data.expiresIn || 20);
+          setBackendOnline(true);
+          return;
+        }
       }
-    } catch (e) {
-      console.error('Error fetching kiosk token', e);
+      throw new Error('API response not ok');
+    } catch {
+      // Fallback Generator: คำนวณรหัส QR ฝั่ง Client ทันทีเพื่อไม่ให้หน้าจอค้างหมุน
+      setBackendOnline(false);
+      const now = Math.floor(Date.now() / 1000);
+      const timeStep = Math.floor(now / 20);
+      const remaining = 20 - (now % 20);
+      const mockHash = Math.abs(timeStep * 31).toString(16).padEnd(8, '0').slice(0, 16);
+
+      setTokenData({
+        workplaceId: wpId,
+        workplaceName: wpName,
+        token: `GEO-${wpId}-${timeStep}-${mockHash}`,
+        expiresIn: remaining,
+      });
+      setCountdown(remaining);
     }
   };
 
@@ -63,7 +84,7 @@ export const KioskTab: React.FC<Props> = ({ workplaces }) => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [selectedWorkplaceId]);
+  }, [selectedWorkplaceId, workplaces]);
 
   const copyToken = () => {
     if (tokenData?.token) {
@@ -73,7 +94,11 @@ export const KioskTab: React.FC<Props> = ({ workplaces }) => {
     }
   };
 
-  const activeWorkplace = workplaces.find((w) => w.id === selectedWorkplaceId);
+  const activeWorkplace =
+    workplaces.find((w) => w.id === selectedWorkplaceId) ||
+    workplaces[0] || {
+      name: 'อาคารวิทยบริการ มหาวิทยาลัยนราธิวาสราชนครินทร์ (โคกเขือ)',
+    };
 
   return (
     <div className="max-w-xl mx-auto space-y-5 pb-20">
@@ -102,7 +127,20 @@ export const KioskTab: React.FC<Props> = ({ workplaces }) => {
         <div className="absolute -top-24 -left-24 w-60 h-60 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -right-24 w-60 h-60 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
 
-        {/* นาฬิกาและหัวเรื่อง */}
+        {/* สถานะการเชื่อมต่อ Backend */}
+        <div className="flex items-center justify-center gap-1.5 mb-3">
+          {backendOnline ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Backend Online (Port 3001)
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              <AlertCircle className="w-3 h-3 text-amber-400" /> กำลังรอ Backend (กำลังใช้โหมดสำรอง)
+            </span>
+          )}
+        </div>
+
+        {/* หัวเรื่องและสถานที่ */}
         <div className="flex items-center justify-center gap-2 text-blue-400 text-xs font-semibold tracking-wider uppercase mb-1">
           <Building2 className="w-4 h-4" />
           <span>{activeWorkplace?.name || 'สำนักงาน'}</span>
@@ -113,20 +151,24 @@ export const KioskTab: React.FC<Props> = ({ workplaces }) => {
           <span>{currentTime || '08:30:00'}</span>
         </div>
 
-        {/* QR Code Container */}
+        {/* QR Code Container (แสดงตลอดเวลา ไม่ค้างหมุน) */}
         <div className="inline-block p-4 md:p-6 bg-white rounded-3xl shadow-xl transition-transform transform hover:scale-[1.02]">
           {tokenData?.token ? (
             <QRCodeSVG
               value={tokenData.token}
-              size={230}
+              size={240}
               level="H"
               includeMargin={false}
               fgColor="#0f172a"
             />
           ) : (
-            <div className="w-[230px] h-[230px] flex items-center justify-center text-slate-400">
-              <RefreshCw className="w-8 h-8 animate-spin" />
-            </div>
+            <QRCodeSVG
+              value="https://aerea-attendance.local"
+              size={240}
+              level="H"
+              includeMargin={false}
+              fgColor="#0f172a"
+            />
           )}
         </div>
 
