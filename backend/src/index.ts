@@ -254,4 +254,5 @@ console.log(`🚀 Area-Based Backend Server is running at http://localhost:${por
 serve({
   fetch: app.fetch,
   port,
+  hostname: '0.0.0.0',
 });

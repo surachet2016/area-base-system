@@ -8,7 +8,10 @@ import {
   RefreshCw,
   Navigation,
   Sparkles,
+  Camera,
+  X,
 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { Workplace, AttendanceRecord } from '../types';
 import { calculateHaversineDistance } from '../utils/geo';
 
@@ -25,6 +28,7 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
   const [recordType, setRecordType] = useState<'CHECK_IN' | 'CHECK_OUT'>('CHECK_IN');
   const [loading, setLoading] = useState(false);
   const [resultMessage, setResultMessage] = useState<{ type: 'success' | 'error'; text: string; details?: any } | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   // เลือกสถานที่เริ่มต้น
   useEffect(() => {
@@ -62,6 +66,38 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
     fetchCurrentLocation();
   }, []);
 
+  // ระบบสแกนกล้อง QR ด้วย html5-qrcode
+  useEffect(() => {
+    let qrScanner: Html5Qrcode | null = null;
+    if (isScanning) {
+      qrScanner = new Html5Qrcode('qr-reader');
+      qrScanner
+        .start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 240, height: 240 } },
+          (decodedText) => {
+            setQrToken(decodedText);
+            if (qrScanner && qrScanner.isScanning) {
+              qrScanner.stop().then(() => setIsScanning(false)).catch(console.error);
+            }
+          },
+          () => {
+            // ignore scan failure per frame
+          }
+        )
+        .catch((err) => {
+          alert('ไม่สามารถเปิดกล้องได้: ' + err);
+          setIsScanning(false);
+        });
+    }
+
+    return () => {
+      if (qrScanner && qrScanner.isScanning) {
+        qrScanner.stop().catch(console.error);
+      }
+    };
+  }, [isScanning]);
+
   // คำนวณระยะห่าง
   const distance =
     userCoords && activeWorkplace
@@ -76,7 +112,7 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
   const isWithinRadius =
     distance !== null && activeWorkplace ? distance <= activeWorkplace.radiusMeters : false;
 
-  // ฟังก์ชันช่วยดึง Token จากหน้าจอ Kiosk อัตโนมัติ (เพื่อความสะดวกในการทดสอบ)
+  // ฟังก์ชันช่วยดึง Token จากหน้าจอ Kiosk อัตโนมัติ
   const autoFillActiveToken = async () => {
     if (!activeWorkplace) return;
     try {
@@ -131,7 +167,7 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          staffId: 'b0000000-0000-0000-0000-000000000001', // บุคลากรตัวอย่าง (ดร.สุรเชษฐ์ สังขพันธ์)
+          staffId: 'b0000000-0000-0000-0000-000000000001',
           workplaceId: activeWorkplace.id,
           token: qrToken.trim(),
           userLat: userCoords.lat,
@@ -168,6 +204,26 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
 
   return (
     <div className="max-w-md mx-auto space-y-4 pb-20">
+      {/* Modal สแกนกล้อง QR Code */}
+      {isScanning && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-5 w-full max-w-sm relative text-center shadow-2xl">
+            <button
+              onClick={() => setIsScanning(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="font-bold text-base text-slate-800 mb-2 flex items-center justify-center gap-1.5">
+              <Camera className="w-5 h-5 text-blue-600" />
+              สแกน QR Code หน้างาน
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">หันกล้องไปที่หน้าจอ Kiosk เพื่ออ่านรหัส Token</p>
+            <div id="qr-reader" className="w-full overflow-hidden rounded-2xl bg-black min-h-[260px]" />
+          </div>
+        </div>
+      )}
+
       {/* ส่วนหัวแสดงประเภทการลงเวลา */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">
@@ -253,7 +309,7 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
 
         {/* ข้อมูล GPS ผู้ใช้ */}
         {userCoords && (
-          <p className="text-[11px] text-slate-400 mt-2">
+          <p className="text-[11px] text-slate-400 mt-2 font-mono">
             พิกัด: {userCoords.lat.toFixed(5)}, {userCoords.lng.toFixed(5)} (±{userCoords.accuracy} ม.)
           </p>
         )}
@@ -276,14 +332,14 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
           <button
             type="button"
             onClick={() => simulateCoords('inside')}
-            className="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+            className="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 font-medium"
           >
             จำลอง: ในรัศมี (5 ม.)
           </button>
           <button
             type="button"
             onClick={() => simulateCoords('outside')}
-            className="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
+            className="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 font-medium"
           >
             จำลอง: นอกรัศมี (550 ม.)
           </button>
@@ -297,26 +353,36 @@ export const CheckInTab: React.FC<Props> = ({ workplaces, onCheckInSuccess }) =>
             <QrCode className="w-4 h-4 text-blue-600" />
             Dynamic QR Token (สแกนหน้างาน)
           </label>
-          <button
-            type="button"
-            onClick={autoFillActiveToken}
-            className="text-[11px] text-blue-600 font-medium hover:underline flex items-center gap-1"
-          >
-            <Sparkles className="w-3 h-3" />
-            ดึง Token ล่าสุดอัตโนมัติ
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsScanning(true)}
+              className="text-[11px] bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded-lg font-semibold flex items-center gap-1"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              เปิดกล้องสแกน
+            </button>
+            <button
+              type="button"
+              onClick={autoFillActiveToken}
+              className="text-[11px] text-blue-600 font-medium hover:underline flex items-center gap-1"
+            >
+              <Sparkles className="w-3 h-3" />
+              ดึง Token
+            </button>
+          </div>
         </div>
 
         <input
           type="text"
           value={qrToken}
           onChange={(e) => setQrToken(e.target.value)}
-          placeholder="วางรหัส Token หรือสแกน QR Code จากจอ Kiosk"
+          placeholder="วางรหัส Token หรือกดปุ่มเปิดกล้องสแกน"
           className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl p-3 focus:ring-2 focus:ring-blue-500 outline-none font-mono"
         />
 
         <p className="text-[11px] text-slate-400">
-          💡 รหัสนี้ดึงมาจากหน้าจอ Kiosk ประจำสำนักงาน ซึ่งจะเปลี่ยนทุก 20 วินาทีเพื่อป้องกันการส่งต่อ
+          💡 สแกนจากหน้าจอ Kiosk หรือกดปุ่ม "ดึง Token" เพื่อทดสอบทันที
         </p>
       </div>
 
