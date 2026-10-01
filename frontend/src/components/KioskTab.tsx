@@ -64,7 +64,7 @@ export const KioskTab: React.FC<Props> = ({ workplaces }) => {
       setTokenData({
         workplaceId: wpId,
         workplaceName: wpName,
-        token: `GEO-${wpId}-${timeStep}-${mockHash}`,
+        token: `GEO:${wpId}:${timeStep}:${mockHash}`,
         expiresIn: remaining,
       });
       setCountdown(remaining);
