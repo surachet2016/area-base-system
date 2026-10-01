@@ -1,0 +1,13 @@
+{
+  "name": "aerea-base-system",
+  "version": "1.0.0",
+  "description": "Area-Based Mobile Time Attendance System",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev"
+  },
+  "keywords": ["geofencing", "time-attendance", "hono", "react", "pwa"],
+  "author": "Dr. Surachet Sankhaphan",
+  "license": "MIT"
+}
